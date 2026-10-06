@@ -115,16 +115,28 @@ main{padding:16px}.view{display:none}.view.active{display:block}
 </header>
 
 <main>
+<div id="passwordResetCard" class="card hidden" style="max-width:620px;margin:18px auto;border:2px solid #bce6d7">
+  <h2>🔐 Set New Password</h2>
+  <p class="muted">Password reset link se aap yahan aaye hain. Naya password set karein.</p>
+  <div class="field"><label>New Password</label><input id="newPassword" type="password" minlength="6" autocomplete="new-password" placeholder="Minimum 6 characters"></div>
+  <div class="field"><label>Confirm New Password</label><input id="confirmPassword" type="password" minlength="6" autocomplete="new-password" placeholder="Password dobara enter karein"></div>
+  <button class="btn primary" style="width:100%" onclick="completePasswordReset()">✅ Update Password</button>
+  <div id="resetStatus" class="locline"></div>
+</div>
 <section id="customer" class="view active">
   <div id="customerAuth" class="card" style="margin-bottom:14px">
     <h3>🔐 Customer Login</h3>
-    <p class="muted">Live booking ke liye customer account se login karein.</p>
+    <p class="muted">Live booking ke liye customer account se login karein. Password bhool gaye hain to <b>Forgot Password</b> use karein.</p>
     <div class="row">
-      <div class="field"><label>Email</label><input id="authEmail" type="email" placeholder="customer@email.com"></div>
-      <div class="field"><label>Password</label><input id="authPassword" type="password" placeholder="Password"></div>
+      <div class="field"><label>Email</label><input id="authEmail" type="email" autocomplete="username" placeholder="customer@email.com"></div>
+      <div class="field"><label>Password</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password"></div>
     </div>
-    <button class="btn primary" onclick="customerLogin()">Login</button>
-    <span id="authStatus" class="locline" style="margin-left:8px"></span>
+    <div class="booking-actions">
+      <button class="btn primary" onclick="customerLogin()">Login</button>
+      <button class="btn ghost" onclick="customerForgotPassword()">🔑 Forgot Password?</button>
+      <button class="btn danger" onclick="customerLogout()">Logout</button>
+    </div>
+    <span id="authStatus" class="locline"></span>
   </div>
   <div class="hero">
     <h1>Ghar ke paas ka kaam, ek jagah. 🌾</h1>
@@ -170,7 +182,10 @@ main{padding:16px}.view{display:none}.view.active{display:block}
   <div id="partnerLogin" class="card"><h2>👷 Partner Login</h2><p class="muted">Supabase Partner account se login karein.</p>
     <div class="field"><label>Partner Email</label><input id="partnerEmail" type="email" placeholder="partner@email.com"></div>
     <div class="field"><label>Password</label><input id="partnerPassword" type="password" placeholder="Password"></div>
-    <button class="btn primary" onclick="partnerLogin()">🔐 Partner Login</button>
+    <div class="booking-actions">
+      <button class="btn primary" onclick="partnerLogin()">🔐 Partner Login</button>
+      <button class="btn ghost" onclick="partnerForgotPassword()">🔑 Forgot Password</button>
+    </div>
   </div>
   <div id="partnerDash" class="hidden">
     <div class="card"><h2>👷 Partner Mode</h2><p id="partnerIdentity" class="muted">Live assigned jobs</p>
@@ -199,7 +214,7 @@ main{padding:16px}.view{display:none}.view.active{display:block}
   </div>
 </section>
 </main>
-<div class="footer">GaonSeva • Dumyana / Panipat • Chrome local business test</div>
+<div class="footer">GaonSeva • Dumyana / Panipat • Live Supabase Web App</div>
 </div>
 
 <div id="modal" class="modal" onclick="if(event.target===this)closeModal()"><div class="sheet"><div class="sheet-head"><h2 id="modalTitle">Booking</h2><button class="close" onclick="closeModal()">✕</button></div><div id="modalBody"></div></div></div>
@@ -211,6 +226,7 @@ const SERVICES=[
  ["🔧","Plumber","Tap, pipe, leakage, motor"],
  ["🪚","Carpenter","Door, furniture, wood work"],
  ["🎨","Painter","Wall, room, exterior"],
+ ["❄️","AC / Fridge Repair","AC, refrigerator and cooling appliance repair"],
  ["🧺","Washing Machine Repair","Home appliance repair"],
  ["🚜","Tractor / Machine Repair","Farm machinery service"],
  ["🔩","Iron Work","Gate, grill, welding"],
@@ -302,6 +318,35 @@ async function customerLogin(){
     await refreshCustomerAuth();
     toast("✅ Customer login successful");
   }catch(e){ console.error(e); toast("❌ Login failed: "+(e.message||"check email/password")); }
+}
+async function customerForgotPassword(){
+  const email=(document.getElementById("authEmail")?.value||"").trim();
+  if(!email){toast("Pehle Customer email enter karein.");return}
+  if(!gSupabase){toast("Supabase abhi connect nahi hua. 2 sec baad try karein.");return}
+  try{
+    const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin + location.pathname});
+    if(error) throw error;
+    toast("📧 Reset link bhej diya gaya. Inbox/Spam check karein.");
+  }catch(e){
+    console.error("Customer password reset failed",e);
+    toast("❌ Reset email nahi gaya: "+(e.message||"Supabase error"));
+  }
+}
+async function customerLogout(){
+  try{
+    if(gSupabase) await gsAuth.signOut();
+    await refreshCustomerAuth();
+    toast("Customer logout ho gaya.");
+  }catch(e){toast("Logout failed: "+(e.message||"Unknown error"))}
+}
+async function partnerForgotPassword(){
+  const email=(document.getElementById("partnerEmail")?.value||"").trim();
+  if(!email){toast("Pehle Partner email enter karein.");return}
+  try{
+    const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin + location.pathname});
+    if(error) throw error;
+    toast("📧 Partner reset link bhej diya gaya.");
+  }catch(e){toast("❌ Reset email nahi gaya: "+(e.message||"Supabase error"))}
 }
 
 async function ensureCustomerProfile(){
@@ -620,7 +665,46 @@ function stopVoice(){listening=false;try{recognition&&recognition.stop()}catch(e
 async function adminForgotPassword(){
  const email=(document.getElementById("adminEmail")?.value||"").trim();
  if(!email){toast("Pehle Admin email enter karein. Supabase > Authentication > Users me email mil jayega.");return}
- try{const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:(location.origin + '/')});if(error)throw error;toast("Password reset email bhej diya gaya. Inbox/Spam check karein.")}catch(e){toast("Reset email nahi gaya: "+(e.message||"Unknown error"))}
+ try{
+   const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin + location.pathname});
+   if(error) throw error;
+   toast("📧 Admin reset link bhej diya gaya. Inbox/Spam check karein.");
+ }catch(e){toast("❌ Reset email nahi gaya: "+(e.message||"Unknown error"))}
+}
+function showPasswordReset(){
+  const card=document.getElementById("passwordResetCard");
+  if(card) card.classList.remove("hidden");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+async function completePasswordReset(){
+  const p=document.getElementById("newPassword")?.value||"";
+  const c=document.getElementById("confirmPassword")?.value||"";
+  const status=document.getElementById("resetStatus");
+  if(p.length<6){toast("Password minimum 6 characters ka hona chahiye.");return}
+  if(p!==c){toast("Dono passwords same hone chahiye.");return}
+  try{
+    const {error}=await gSupabase.auth.updateUser({password:p});
+    if(error) throw error;
+    if(status) status.textContent="✅ Password successfully update ho gaya.";
+    document.getElementById("newPassword").value="";
+    document.getElementById("confirmPassword").value="";
+    toast("✅ Password updated successfully.");
+    setTimeout(()=>document.getElementById("passwordResetCard")?.classList.add("hidden"),1200);
+  }catch(e){
+    console.error("Password update failed",e);
+    if(status) status.textContent="❌ "+(e.message||"Password update failed");
+    toast("❌ Password update nahi hua.");
+  }
+}
+function bindAuthRecovery(){
+  if(!gSupabase || !gSupabase.auth) return;
+  gSupabase.auth.onAuthStateChange((event)=>{
+    if(event==="PASSWORD_RECOVERY") setTimeout(showPasswordReset,50);
+    if(event==="SIGNED_IN") setTimeout(()=>refreshCustomerAuth().catch(()=>{}),50);
+  });
+  if(location.hash.includes("type=recovery") || location.href.includes("type=recovery")){
+    setTimeout(showPasswordReset,300);
+  }
 }
 window.addEventListener("load",()=>{const s=document.getElementById("langSelect");if(s)s.value=currentLang;setLang(currentLang)});
 </script>
@@ -639,6 +723,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   if(ok) {
     try {
+      bindAuthRecovery();
       await syncLiveServices();
       await refreshCustomerAuth();
     } catch(e) { console.warn("GaonSeva live initialization:", e); }
