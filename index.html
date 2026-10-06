@@ -695,10 +695,16 @@ async function handlePasswordRecovery(){
     const queryType=url.searchParams.get("type");
     const hash=new URLSearchParams((location.hash||"").replace(/^#/,""));
     const hashType=hash.get("type");
-    const hasRecoveryHash = hashType==="recovery" || hash.get("access_token");
+    const hasRecoveryHash = hashType==="recovery" || !!hash.get("access_token");
+    const recoveryUrl = !!code || queryType==="recovery" || hasRecoveryHash;
 
-    // Supabase can deliver recovery as a PKCE `code` query parameter.
-    // Exchange it before trying to update the password.
+    // Persist the fact that this browser entered the password-recovery flow.
+    // Gmail/Chrome/custom tabs can reload the page while Supabase is consuming
+    // the URL fragment; sessionStorage prevents that reload from losing the UI.
+    if(recoveryUrl) sessionStorage.setItem("gaonseva_recovery_pending","1");
+    const pending = sessionStorage.getItem("gaonseva_recovery_pending")==="1";
+
+    // PKCE flow: Supabase sends ?code=... . Exchange it for a session first.
     if(code){
       const {error}=await gSupabase.auth.exchangeCodeForSession(code);
       if(error){
@@ -707,23 +713,30 @@ async function handlePasswordRecovery(){
         return false;
       }
       showPasswordReset("🔐 Naya password set karein.");
-      cleanRecoveryUrl();
+      // Do NOT clean the URL yet. Keep the recovery context until the user
+      // successfully changes the password.
       return true;
     }
 
-    // Legacy/implicit flow: Supabase puts access_token + type=recovery in the URL hash.
-    if(hasRecoveryHash || queryType==="recovery"){
-      // The Supabase client normally consumes the hash automatically. Give it a
-      // moment, then explicitly verify that a session exists.
-      const {data,error}=await gSupabase.auth.getSession();
-      if(error) throw error;
-      if(data?.session){
+    // Implicit/legacy flow: Supabase puts access_token + type=recovery in hash.
+    // Give the SDK a short window to consume the hash, then check the session.
+    if(hasRecoveryHash || queryType==="recovery" || pending){
+      let session=null;
+      for(let i=0;i<8;i++){
+        const {data,error}=await gSupabase.auth.getSession();
+        if(error) throw error;
+        session=data?.session||null;
+        if(session) break;
+        await new Promise(r=>setTimeout(r,250));
+      }
+      if(session){
         showPasswordReset("🔐 Naya password set karein.");
-        if(hasRecoveryHash) cleanRecoveryUrl();
         return true;
       }
-      showPasswordReset("⏳ Reset session load ho rahi hai. Agar option active na ho to link dobara open karein.");
-      return false;
+      if(recoveryUrl || pending){
+        showPasswordReset("⏳ Reset session load nahi hui. Agar password box na aaye, isi email se naya reset link request karein.");
+        return false;
+      }
     }
 
     return false;
@@ -753,6 +766,7 @@ async function completePasswordReset(){
     document.getElementById("newPassword").value="";
     document.getElementById("confirmPassword").value="";
     toast("✅ Password updated successfully.");
+    sessionStorage.removeItem("gaonseva_recovery_pending");
     setTimeout(()=>{
       document.getElementById("passwordResetCard")?.classList.add("hidden");
       cleanRecoveryUrl();
