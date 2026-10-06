@@ -671,11 +671,69 @@ async function adminForgotPassword(){
    toast("📧 Admin reset link bhej diya gaya. Inbox/Spam check karein.");
  }catch(e){toast("❌ Reset email nahi gaya: "+(e.message||"Unknown error"))}
 }
-function showPasswordReset(){
+function showPasswordReset(message){
   const card=document.getElementById("passwordResetCard");
+  const status=document.getElementById("resetStatus");
   if(card) card.classList.remove("hidden");
-  window.scrollTo({top:0,behavior:"smooth"});
+  if(status && message) status.textContent=message;
+  setTimeout(()=>window.scrollTo({top:0,behavior:"smooth"}),30);
 }
+
+function cleanRecoveryUrl(){
+  try{
+    const clean=location.origin + location.pathname;
+    history.replaceState({}, document.title, clean);
+  }catch(e){}
+}
+
+async function handlePasswordRecovery(){
+  if(!gSupabase || !gSupabase.auth) return false;
+
+  try{
+    const url=new URL(location.href);
+    const code=url.searchParams.get("code");
+    const queryType=url.searchParams.get("type");
+    const hash=new URLSearchParams((location.hash||"").replace(/^#/,""));
+    const hashType=hash.get("type");
+    const hasRecoveryHash = hashType==="recovery" || hash.get("access_token");
+
+    // Supabase can deliver recovery as a PKCE `code` query parameter.
+    // Exchange it before trying to update the password.
+    if(code){
+      const {error}=await gSupabase.auth.exchangeCodeForSession(code);
+      if(error){
+        console.error("Recovery code exchange failed:",error);
+        showPasswordReset("❌ Reset link invalid/expired. Please request a new reset link.");
+        return false;
+      }
+      showPasswordReset("🔐 Naya password set karein.");
+      cleanRecoveryUrl();
+      return true;
+    }
+
+    // Legacy/implicit flow: Supabase puts access_token + type=recovery in the URL hash.
+    if(hasRecoveryHash || queryType==="recovery"){
+      // The Supabase client normally consumes the hash automatically. Give it a
+      // moment, then explicitly verify that a session exists.
+      const {data,error}=await gSupabase.auth.getSession();
+      if(error) throw error;
+      if(data?.session){
+        showPasswordReset("🔐 Naya password set karein.");
+        if(hasRecoveryHash) cleanRecoveryUrl();
+        return true;
+      }
+      showPasswordReset("⏳ Reset session load ho rahi hai. Agar option active na ho to link dobara open karein.");
+      return false;
+    }
+
+    return false;
+  }catch(e){
+    console.error("Password recovery handling failed:",e);
+    showPasswordReset("❌ Reset link process nahi ho saka. Naya reset link request karein.");
+    return false;
+  }
+}
+
 async function completePasswordReset(){
   const p=document.getElementById("newPassword")?.value||"";
   const c=document.getElementById("confirmPassword")?.value||"";
@@ -683,28 +741,35 @@ async function completePasswordReset(){
   if(p.length<6){toast("Password minimum 6 characters ka hona chahiye.");return}
   if(p!==c){toast("Dono passwords same hone chahiye.");return}
   try{
+    const {data:sessionData}=await gSupabase.auth.getSession();
+    if(!sessionData?.session){
+      if(status) status.textContent="❌ Reset session nahi mili. Naya reset link request karein.";
+      toast("❌ Reset link session missing/expired.");
+      return;
+    }
     const {error}=await gSupabase.auth.updateUser({password:p});
     if(error) throw error;
     if(status) status.textContent="✅ Password successfully update ho gaya.";
     document.getElementById("newPassword").value="";
     document.getElementById("confirmPassword").value="";
     toast("✅ Password updated successfully.");
-    setTimeout(()=>document.getElementById("passwordResetCard")?.classList.add("hidden"),1200);
+    setTimeout(()=>{
+      document.getElementById("passwordResetCard")?.classList.add("hidden");
+      cleanRecoveryUrl();
+    },1200);
   }catch(e){
     console.error("Password update failed",e);
     if(status) status.textContent="❌ "+(e.message||"Password update failed");
     toast("❌ Password update nahi hua.");
   }
 }
+
 function bindAuthRecovery(){
   if(!gSupabase || !gSupabase.auth) return;
   gSupabase.auth.onAuthStateChange((event)=>{
-    if(event==="PASSWORD_RECOVERY") setTimeout(showPasswordReset,50);
+    if(event==="PASSWORD_RECOVERY") setTimeout(()=>showPasswordReset("🔐 Naya password set karein."),50);
     if(event==="SIGNED_IN") setTimeout(()=>refreshCustomerAuth().catch(()=>{}),50);
   });
-  if(location.hash.includes("type=recovery") || location.href.includes("type=recovery")){
-    setTimeout(showPasswordReset,300);
-  }
 }
 window.addEventListener("load",()=>{const s=document.getElementById("langSelect");if(s)s.value=currentLang;setLang(currentLang)});
 </script>
@@ -724,6 +789,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   if(ok) {
     try {
       bindAuthRecovery();
+      // Handle both Supabase recovery formats:
+      // 1) #access_token=...&type=recovery
+      // 2) ?code=... (PKCE)
+      await handlePasswordRecovery();
       await syncLiveServices();
       await refreshCustomerAuth();
     } catch(e) { console.warn("GaonSeva live initialization:", e); }
