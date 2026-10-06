@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<!-- GaonSeva Supabase live connection -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+window.GAONSEVA_SUPABASE_URL = "https://usiuyibnvgpkvedslhug.supabase.co";
+window.GAONSEVA_SUPABASE_KEY = "sb_publishable_l9oTX1ZdZwEoYY0rw6pjuw_VI-DRJAK";
+window.gSupabase = null;
+
+window.initGaonSevaSupabase = async function () {
+  try {
+    if (!window.supabase || !window.supabase.createClient) {
+      console.warn("Supabase SDK not loaded");
+      return false;
+    }
+    window.gSupabase = window.supabase.createClient(
+      window.GAONSEVA_SUPABASE_URL,
+      window.GAONSEVA_SUPABASE_KEY
+    );
+    const { error } = await window.gSupabase.from("services").select("id,name,active").limit(1);
+    if (error) throw error;
+    console.log("GaonSeva: Supabase connected");
+    return true;
+  } catch (e) {
+    console.error("GaonSeva Supabase connection failed:", e);
+    return false;
+  }
+};
+
+window.gsSupabase = {
+  async services() {
+    const { data, error } = await gSupabase.from("services").select("*").eq("active", true).order("id");
+    if (error) throw error; return data || [];
+  },
+  async partners() {
+    const { data, error } = await gSupabase.from("partners").select("*").eq("active", true).order("id");
+    if (error) throw error; return data || [];
+  },
+  async createBooking(row) {
+    const { data, error } = await gSupabase.from("bookings").insert(row).select().single();
+    if (error) throw error; return data;
+  },
+  async booking(id) {
+    const { data, error } = await gSupabase.from("bookings").select("*").eq("id", id).single();
+    if (error) throw error; return data;
+  },
+  async myNotifications(customerId) {
+    const { data, error } = await gSupabase.from("notifications").select("*").eq("customer_id", customerId).order("created_at", {ascending:false});
+    if (error) throw error; return data || [];
+  }
+};
+
+// Live customer authentication helpers. Booking writes require a signed-in customer
+// because Supabase RLS protects the bookings/customers tables.
+window.gsAuth = {
+  async session(){ const {data}=await gSupabase.auth.getSession(); return data?.session||null; },
+  async signIn(email,password){ const {data,error}=await gSupabase.auth.signInWithPassword({email,password}); if(error) throw error; return data; },
+  async signOut(){ const {error}=await gSupabase.auth.signOut(); if(error) throw error; },
+  async currentCustomer(){
+    const session=await this.session(); if(!session) return null;
+    const {data,error}=await gSupabase.from("customers").select("*").eq("auth_user_id",session.user.id).maybeSingle();
+    if(error) throw error; return data;
+  },
+  async currentPartner(){
+    const session=await this.session(); if(!session) return null;
+    const {data,error}=await gSupabase.from("partners").select("*").eq("auth_user_id",session.user.id).maybeSingle();
+    if(error) throw error; return data;
+  }
+};
+</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#087f5b">
+<title>GaonSeva — Village Services</title>
+<style>
+:root{--g:#087f5b;--g2:#0aa06f;--bg:#f4f7f6;--card:#fff;--text:#16211d;--muted:#6b7772;--line:#dfe7e3;--danger:#d92d20;--warn:#b7791f;--blue:#2563eb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+button,input,select,textarea{font:inherit}button{cursor:pointer}.app{max-width:1100px;margin:auto;min-height:100vh}
+.top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:12px 16px}
+.brand{display:flex;align-items:center;gap:10px}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,var(--g),#18b77e);display:grid;place-items:center;color:#fff;font-size:23px;box-shadow:0 5px 15px #087f5b33}.brand b{font-size:20px}.brand small{display:block;color:var(--muted)}
+.nav{display:flex;gap:7px;overflow:auto;margin-top:11px}.nav button{white-space:nowrap;border:1px solid var(--line);background:#fff;color:#44514c;border-radius:999px;padding:8px 12px}.nav button.active{background:#e7f7f1;color:var(--g);border-color:#bce6d7;font-weight:700}
+main{padding:16px}.view{display:none}.view.active{display:block}
+.hero{background:linear-gradient(135deg,#087f5b,#0c9a6a);color:#fff;border-radius:24px;padding:24px;box-shadow:0 12px 30px #087f5b25}.hero h1{margin:0 0 7px;font-size:30px}.hero p{margin:0;color:#e5fff5}.hero .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:17px}
+.btn{border:0;border-radius:12px;padding:11px 15px;font-weight:700}.primary{background:var(--g);color:#fff}.white{background:#fff;color:var(--g)}.ghost{background:#eef6f2;color:var(--g)}.danger{background:#feeceb;color:var(--danger)}.dark{background:#17211d;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}.service{background:#fff;border:1px solid var(--line);border-radius:17px;padding:16px;text-align:left;transition:.15s}.service:hover{transform:translateY(-2px);box-shadow:0 7px 20px #0000000b}.service .ico{font-size:28px}.service b{display:block;margin-top:8px}.service span{color:var(--muted);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px;box-shadow:0 3px 12px #00000006}.card h2,.card h3{margin:0 0 13px}.row{display:grid;grid-template-columns:1fr 1fr;gap:11px}.field{margin-bottom:11px}.field label{display:block;font-size:13px;font-weight:800;margin-bottom:6px}.field input,.field select,.field textarea{width:100%;border:1px solid #ccd7d2;border-radius:11px;padding:11px 12px;background:#fff;outline:none}.field input:focus,.field select:focus,.field textarea:focus{border-color:#5fc5a5;box-shadow:0 0 0 3px #087f5b12}.field textarea{min-height:90px;resize:vertical}
+.locbox{border:1px dashed #7fcdb4;background:#f1fbf7;border-radius:13px;padding:12px}.locline{font-size:13px;color:#496059;margin-top:7px}.muted{color:var(--muted);font-size:13px}.success{color:#087f5b}.error{color:var(--danger)}.hidden{display:none!important}
+.booking{border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0;background:#fff}.booking-top{display:flex;justify-content:space-between;gap:10px}.pill{display:inline-block;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;background:#edf4f1;color:#38534a}.pill.new{background:#fff5dc;color:#9a6500}.pill.working{background:#e8f0ff;color:#2455a6}.pill.done{background:#e7f8ee;color:#167044}.pill.cancel{background:#feeceb;color:#a6261c}.meta{font-size:13px;color:var(--muted);line-height:1.7}.booking-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.mini{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:#fff}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{background:#fff;border:1px solid var(--line);border-radius:15px;padding:14px}.stat b{display:block;font-size:24px}.stat span{font-size:12px;color:var(--muted)}
+.modal{position:fixed;inset:0;background:#0007;display:none;align-items:flex-end;justify-content:center;z-index:50}.modal.show{display:flex}.sheet{background:#fff;width:min(700px,100%);max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:20px}.sheet-head{display:flex;justify-content:space-between;align-items:center}.close{border:0;background:#eef2f0;border-radius:50%;width:36px;height:36px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#17211d;color:#fff;padding:12px 16px;border-radius:12px;display:none;z-index:100;max-width:90%;text-align:center}.toast.show{display:block}
+.empty{text-align:center;padding:28px;color:var(--muted)}.search{display:flex;gap:8px}.search input{flex:1;border:1px solid var(--line);border-radius:11px;padding:11px}
+.footer{text-align:center;color:var(--muted);padding:28px 10px;font-size:12px}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}.stats{grid-template-columns:repeat(2,1fr)}.hero h1{font-size:25px}}
+@media(max-width:480px){main{padding:12px}.row{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,1fr);gap:8px}.service{padding:12px}.service .ico{font-size:24px}.top{padding:10px 12px}}
+</style>
+</head>
+<body>
+<div id="gs-live-status" style="position:fixed;right:10px;bottom:10px;z-index:9999;background:#fff;border:1px solid #dfe7e3;border-radius:999px;padding:7px 11px;font:700 12px system-ui;color:#6b7772;box-shadow:0 4px 16px #0001">
+  Supabase: connecting…
+</div>
+
+<div class="app">
+<header class="top">
+  <div class="brand"><div class="logo">🌾</div><div><b>GaonSeva</b><small>Village Local Services</small></div></div>
+  <div style="display:flex;gap:7px;align-items:center;margin-top:10px;flex-wrap:wrap">
+  <select id="langSelect" onchange="setLang(this.value)" style="padding:8px 10px;border:1px solid #dfe7e3;border-radius:999px;background:#fff">
+    <option value="hi">हिंदी</option><option value="en">English</option><option value="hinglish">Hinglish</option><option value="hr">हरियाणवी</option>
+  </select>
+  <button class="btn ghost" style="padding:8px 12px" onclick="toggleVoice()">🎙️ <span data-i="voice">Voice</span></button>
+</div>
+<nav class="nav" id="nav"></nav>
+</header>
+
+<main>
+<section id="customer" class="view active">
+  <div id="customerAuth" class="card" style="margin-bottom:14px">
+    <h3>🔐 Customer Login</h3>
+    <p class="muted">Live booking ke liye customer account se login karein.</p>
+    <div class="row">
+      <div class="field"><label>Email</label><input id="authEmail" type="email" placeholder="customer@email.com"></div>
+      <div class="field"><label>Password</label><input id="authPassword" type="password" placeholder="Password"></div>
+    </div>
+    <button class="btn primary" onclick="customerLogin()">Login</button>
+    <span id="authStatus" class="locline" style="margin-left:8px"></span>
+  </div>
+  <div class="hero">
+    <h1>Ghar ke paas ka kaam, ek jagah. 🌾</h1>
+    <p>Electrician, plumber, carpenter, painter, repair aur local services book karein.</p>
+    <div class="actions"><button class="btn white" onclick="openBooking()">🛠️ Service Book Karein</button><button class="btn" style="background:#ffffff22;color:#fff" onclick="show('bookings')">📋 My Bookings</button></div>
+  </div>
+  <div class="grid" id="servicesGrid"></div>
+  <div class="card"><h3>📍 Aapki location</h3><div class="locbox"><button class="btn ghost" onclick="detectLocation()">📍 Current Location Use Karein</button><div id="homeLoc" class="locline">Location optional hai. Address manually bhi de sakte hain.</div></div></div>
+</section>
+
+<section id="book" class="view">
+  <div class="card">
+    <h2>🛠️ Service Booking</h2>
+    <div class="row">
+      <div class="field"><label>Service *</label><select id="fService"></select></div>
+      <div class="field"><label>Mobile *</label><input id="fMobile" inputmode="numeric" maxlength="10" placeholder="10 digit mobile"></div>
+    </div>
+    <div class="field"><label>Name *</label><div style="display:flex;gap:6px"><input id="fName" placeholder="Aapka naam"><button type="button" class="btn ghost" style="width:auto" onclick="voiceFor('fName')">🎙️</button></div></div>
+    <div class="row"><div class="field"><label>Village *</label><div style="display:flex;gap:6px"><input id="fVillage" value="Dumyana"><button type="button" class="btn ghost" style="width:auto" onclick="voiceFor('fVillage')">🎙️</button></div></div><div class="field"><label>House / Gali</label><input id="fAddress" placeholder="House no. / gali"></div></div>
+    <div class="field"><label>Landmark</label><input id="fLandmark" placeholder="School / mandir / chowk"></div>
+    <div class="locbox"><button class="btn ghost" onclick="detectLocation(true)">📍 Current Location Add Karein</button><div id="formLoc" class="locline">GPS location optional — address bhi valid hai.</div></div>
+    <div class="row">
+      <div class="field"><label>Date *</label><input id="fDate" type="date"></div>
+      <div class="field"><label>Time Slot *</label><select id="fTime"></select></div>
+    </div>
+    <div class="card" style="margin:8px 0 14px;padding:14px">
+<h3 style="margin:0 0 10px">💳 Payment</h3>
+<div class="field"><label>Payment Method</label><select id="fPayment"><option value="Cash">Cash</option><option value="UPI">UPI</option></select></div>
+<div class="field"><label>UPI ID (optional)</label><input id="fUpi" placeholder="example@upi"></div>
+<div class="locbox"><b>📷 UPI Scanner</b><div class="locline">Production launch par official UPI QR/scanner connect kiya jayega.</div></div>
+</div>
+<div class="field"><label>Kaunsa kaam hai?</label><div style="display:flex;gap:6px;align-items:stretch"><textarea id="fDetails" placeholder="Problem / required work detail"></textarea><button type="button" class="btn ghost" style="width:52px" onclick="voiceFor('fDetails')">🎙️</button></div></div>
+    <button class="btn primary" style="width:100%" onclick="createBooking()">✅ Booking Confirm Karein</button>
+  </div>
+</section>
+
+<section id="bookings" class="view">
+  <div class="card"><h2>📋 My Bookings</h2><div class="search"><input id="mySearch" placeholder="Booking ID / mobile / service" oninput="renderMyBookings()"></div><div id="myBookings"></div></div>
+  <div class="card"><h2>🔔 Notifications</h2><button class="btn ghost" onclick="loadCustomerNotifications()">🔄 Refresh</button><div id="customerNotifications" class="notification-list"><div class="empty">Login karke notifications dekhein.</div></div></div>
+</section>
+
+<section id="partner" class="view">
+  <div id="partnerLogin" class="card"><h2>👷 Partner Login</h2><p class="muted">Supabase Partner account se login karein.</p>
+    <div class="field"><label>Partner Email</label><input id="partnerEmail" type="email" placeholder="partner@email.com"></div>
+    <div class="field"><label>Password</label><input id="partnerPassword" type="password" placeholder="Password"></div>
+    <button class="btn primary" onclick="partnerLogin()">🔐 Partner Login</button>
+  </div>
+  <div id="partnerDash" class="hidden">
+    <div class="card"><h2>👷 Partner Mode</h2><p id="partnerIdentity" class="muted">Live assigned jobs</p>
+      <button class="btn ghost" onclick="partnerLogout()">Logout</button>
+      <button class="btn primary" onclick="renderPartner()">🔄 Refresh Jobs</button>
+    </div>
+    <div class="card"><div id="partnerJobs"></div></div>
+  </div>
+</section>
+
+<section id="admin" class="view">
+  <div id="adminLogin" class="card"><h2>⚙️ Admin</h2><p class="muted">Live Admin access ke liye Supabase Admin account se login karein.</p><div class="field"><label>Admin Email</label><input id="adminEmail" type="email" placeholder="admin@email.com"></div><div class="field"><label>Admin Password</label><input id="adminPassword" type="password" placeholder="Password"></div><button class="btn primary" onclick="adminLogin()">🔐 Admin Login</button><button class="btn ghost" style="margin-top:8px;width:100%" onclick="adminForgotPassword()">🔑 Forgot Password / Reset</button><p class="muted" style="margin-top:10px">Password Supabase Auth ka hai. Reset ke liye Admin email required hai.</p></div>
+  <div id="adminDash" class="hidden">
+    <div class="stats"><div class="stat"><b id="sTotal">0</b><span>Total</span></div><div class="stat"><b id="sNew">0</b><span>New</span></div><div class="stat"><b id="sWork">0</b><span>Working</span></div><div class="stat"><b id="sDone">0</b><span>Done</span></div></div>
+    <div class="card"><h2>💳 UPI Settings</h2>
+<p class="muted">Apni business UPI ID yahan save karein. Live payment verification server/payment provider se hogi.</p>
+<div class="row"><div class="field"><label>Business UPI ID</label><input id="businessUpi" placeholder="gaonseva@upi"></div><div class="field"><label>Business Name</label><input id="businessName" placeholder="GaonSeva"></div></div>
+<button class="btn ghost" onclick="saveUpiSettings()">Save UPI Settings</button></div>
+<div class="card"><h2>💰 Partner Bonus</h2>
+<p class="muted">Default: Weekend +20%, Holiday +30%. Admin can change it.</p>
+<div class="row"><div class="field"><label>Weekend Bonus %</label><input id="weekendBonus" type="number" value="20" min="0" max="200"></div><div class="field"><label>Holiday Bonus %</label><input id="holidayBonus" type="number" value="30" min="0" max="200"></div></div>
+<div class="field"><label>Holiday Dates (YYYY-MM-DD, comma separated)</label><input id="holidayDates" placeholder="2026-10-20, 2026-10-21"></div>
+<button class="btn ghost" onclick="saveBonusSettings()">Save Bonus Settings</button>
+<div id="bonusPreview" class="locline"></div></div>
+<div class="card"><h2>⚙️ Operations</h2><div class="booking-actions"><button class="btn ghost" onclick="exportCSV()">⬇️ CSV Export</button><button class="btn danger" onclick="resetDemo()">Reset Demo Data</button></div><div class="search" style="margin-top:10px"><input id="adminSearch" placeholder="Search booking..." oninput="renderAdmin()"></div><div id="adminBookings"></div></div>
+  </div>
+</section>
+</main>
+<div class="footer">GaonSeva • Dumyana / Panipat • Chrome local business test</div>
+</div>
+
+<div id="modal" class="modal" onclick="if(event.target===this)closeModal()"><div class="sheet"><div class="sheet-head"><h2 id="modalTitle">Booking</h2><button class="close" onclick="closeModal()">✕</button></div><div id="modalBody"></div></div></div>
+<div id="toast" class="toast"></div>
+
+<script>
+const SERVICES=[
+ ["⚡","Electrician","Wiring, fan, switch, meter"],
+ ["🔧","Plumber","Tap, pipe, leakage, motor"],
+ ["🪚","Carpenter","Door, furniture, wood work"],
+ ["🎨","Painter","Wall, room, exterior"],
+ ["🧺","Washing Machine Repair","Home appliance repair"],
+ ["🚜","Tractor / Machine Repair","Farm machinery service"],
+ ["🔩","Iron Work","Gate, grill, welding"],
+ ["🧹","Housekeeping","Cleaning & household help"],
+ ["👷","Labour","General local labour"]
+];
+const PARTNERS=[
+ {id:"P1",name:"Rakesh Kumar",service:"Electrician",village:"Dumyana",mobile:"9000000001",rating:4.8},
+ {id:"P2",name:"Sandeep Kumar",service:"Plumber",village:"Babuipur",mobile:"9000000002",rating:4.7},
+ {id:"P3",name:"Amit Kumar",service:"Carpenter",village:"Siwah",mobile:"9000000003",rating:4.9},
+ {id:"P4",name:"Vikas Painter",service:"Painter",village:"Naultha",mobile:"9000000004",rating:4.8},
+ {id:"P5",name:"Raj Farm Services",service:"Tractor / Machine Repair",village:"Chhajpur",mobile:"9000000005",rating:4.7}
+];
+const SLOTS=["08:00 AM - 10:00 AM","10:00 AM - 12:00 PM","12:00 PM - 02:00 PM","02:00 PM - 04:00 PM","04:00 PM - 06:00 PM","06:00 PM - 08:00 PM"];
+const KEY="gaonseva_ultimate_v1";
+let state=JSON.parse(localStorage.getItem(KEY)||"null")||{bookings:[],location:null,admin:false,bonus:{weekend:20,holiday:30,holidays:[]},upi:{id:"",name:"GaonSeva"}};
+state.bonus=state.bonus||{weekend:20,holiday:30,holidays:[]};
+state.upi=state.upi||{id:"",name:"GaonSeva"};
+function save(){localStorage.setItem(KEY,JSON.stringify(state))}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function toast(t){let x=document.getElementById("toast");x.textContent=t;x.classList.add("show");setTimeout(()=>x.classList.remove("show"),2600)}
+function show(id){document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="bookings")renderMyBookings();if(id==="admin")renderAdmin();if(id==="partner")renderPartner();window.scrollTo({top:0,behavior:"smooth"})}
+function setupNav(){document.getElementById("nav").innerHTML=[["customer","🏠 Home"],["book","🛠️ Book"],["bookings","📋 Bookings"],["partner","👷 Partner"],["admin","⚙️ Admin"]].map(x=>`<button onclick="show('${x[0]}')" id="nav-${x[0]}">${x[1]}</button>`).join("")}
+function renderServices(){document.getElementById("servicesGrid").innerHTML=SERVICES.map((s,i)=>`<button class="service" onclick="openBooking('${esc(s[1])}')"><div class="ico">${s[0]}</div><b>${s[1]}</b><span>${s[2]}</span></button>`).join("")}
+function openBooking(service){show("book");if(service)document.getElementById("fService").value=service}
+function setupForm(){
+  const service=document.getElementById("fService");
+  const time=document.getElementById("fTime");
+  if(service) service.innerHTML=SERVICES.map(s=>`<option>${s[1]}</option>`).join("");
+  if(time) time.innerHTML=SLOTS.map(s=>`<option>${s}</option>`).join("");
+  const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  const date=document.getElementById("fDate"); if(date) date.value=d.toISOString().slice(0,10);
+}
+function updatePMobile(){
+  const sel=document.getElementById("pSelect"), mobile=document.getElementById("pMobile");
+  if(!sel || !mobile) return;
+  const p=PARTNERS.find(x=>x.id===sel.value); mobile.value=p?p.mobile:"";
+}
+const partnerSelect=document.getElementById("pSelect");
+if(partnerSelect) partnerSelect.addEventListener("change",updatePMobile);
+
+function detectLocation(fromForm=false){
+ if(!navigator.geolocation){toast("Is device/browser mein GPS available nahi hai.");return}
+ toast("📡 Location detect ho rahi hai...");
+ navigator.geolocation.getCurrentPosition(pos=>{
+   state.location={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:Math.round(pos.coords.accuracy||0),at:new Date().toISOString()};save();
+   let txt=`✅ GPS selected • ${state.location.lat.toFixed(6)}, ${state.location.lng.toFixed(6)}${state.location.accuracy?" • ±"+state.location.accuracy+"m":""}`;
+   document.getElementById(fromForm?"formLoc":"homeLoc").innerHTML=txt;
+   toast("📍 Location save ho gayi");
+ },()=>toast("Location permission nahi mili. Chrome mein Allow karein ya address manually bhar dein."),{enableHighAccuracy:true,timeout:12000,maximumAge:60000})
+}
+
+function calculateBonus(date,base){
+ const d=new Date(date+"T12:00:00");
+ if((state.bonus.holidays||[]).includes(date)) return {amount:Math.round(base*(state.bonus.holiday/100)),type:"Holiday"};
+ if(d.getDay()===0||d.getDay()===6) return {amount:Math.round(base*(state.bonus.weekend/100)),type:"Weekend"};
+ return {amount:0,type:""};
+}
+function saveBonusSettings(){
+ state.bonus={
+   weekend:Math.max(0,Number(document.getElementById("weekendBonus").value)||0),
+   holiday:Math.max(0,Number(document.getElementById("holidayBonus").value)||0),
+   holidays:document.getElementById("holidayDates").value.split(",").map(x=>x.trim()).filter(Boolean)
+ };
+ state.bookings.forEach(b=>{let x=calculateBonus(b.date,b.partnerBaseAmount||0);b.bonus=x.amount;b.bonusType=x.type});
+ save(); toast("💰 Bonus settings saved"); renderAdmin();
+}
+function saveUpiSettings(){
+ state.upi={id:document.getElementById("businessUpi").value.trim(),name:document.getElementById("businessName").value.trim()||"GaonSeva"};
+ save(); toast("💳 UPI settings saved");
+}
+function loadBusinessSettings(){
+ const a=document.getElementById("businessUpi"),b=document.getElementById("businessName"),w=document.getElementById("weekendBonus"),h=document.getElementById("holidayBonus"),d=document.getElementById("holidayDates");
+ if(a){a.value=state.upi.id||"";b.value=state.upi.name||"GaonSeva";w.value=state.bonus.weekend;h.value=state.bonus.holiday;d.value=(state.bonus.holidays||[]).join(", ");}
+}
+function payUPI(id){
+ const b=state.bookings.find(x=>x.id===id);
+ if(!b||!state.upi.id){toast("UPI ID configure nahi hai");return}
+ let url="upi://pay?pa="+encodeURIComponent(state.upi.id)+"&pn="+encodeURIComponent(state.upi.name||"GaonSeva")+"&cu=INR&tn="+encodeURIComponent("GaonSeva "+b.id);
+ if(Number(b.amount)>0) url+="&am="+Number(b.amount);
+ location.href=url;
+}
+async function customerLogin(){
+  const email=document.getElementById("authEmail").value.trim();
+  const password=document.getElementById("authPassword").value;
+  if(!email||!password){toast("Email aur password bharein");return}
+  try{
+    await gsAuth.signIn(email,password);
+    await refreshCustomerAuth();
+    toast("✅ Customer login successful");
+  }catch(e){ console.error(e); toast("❌ Login failed: "+(e.message||"check email/password")); }
+}
+
+async function ensureCustomerProfile(){
+  const session=await gsAuth.session();
+  if(!session) return null;
+  let customer=await gsAuth.currentCustomer();
+  if(customer) return customer;
+  const phone=(session.user.phone||"").replace(/\D/g,"");
+  const email=session.user.email||"";
+  const mobile=phone.length>=10 ? phone.slice(-10) : "";
+  if(!mobile) return null;
+  const {data,error}=await gSupabase.from("customers").insert({
+    name: "GaonSeva Customer",
+    mobile,
+    village: "",
+    auth_user_id: session.user.id
+  }).select().single();
+  if(error){
+    // A race/duplicate insert can happen after OTP verification; retry the lookup.
+    customer=await gsAuth.currentCustomer();
+    if(customer) return customer;
+    throw error;
+  }
+  return data;
+}
+
+async function refreshCustomerAuth(){
+  const session=await gsAuth.session();
+  const box=document.getElementById("customerAuth");
+  const status=document.getElementById("authStatus");
+  if(!box||!status) return;
+  if(session){
+    const c=await ensureCustomerProfile();
+    box.querySelector("h3").textContent="🔐 Customer Account";
+    status.textContent=c?`Logged in: ${c.name}`:`Logged in: ${session.user.phone||session.user.email||"Account"}`;
+    status.style.color="#087f5b";
+  }else{
+    status.textContent="Not logged in";
+    status.style.color="#d92d20";
+  }
+}
+
+async function createBooking(){
+ const name=document.getElementById("fName").value.trim(),mobile=document.getElementById("fMobile").value.replace(/\D/g,""),village=document.getElementById("fVillage").value.trim(),address=document.getElementById("fAddress").value.trim();
+ if(!name||mobile.length!==10||!village){toast("❌ Name, valid 10-digit mobile aur village bharein");return}
+ if(!address&&!state.location){toast("📍 Address ya current location zaroor dein");return}
+ try{
+   const session=await gsAuth.session();
+   if(!session){toast("🔐 Pehle Customer Login karein");return}
+   let customer=await ensureCustomerProfile();
+   if(!customer){toast("Customer profile nahi mili. Pehle mobile OTP ya customer login karein.");return}
+   const serviceName=document.getElementById("fService").value;
+   const {data:service,error:serviceError}=await gSupabase.from("services").select("id,name").eq("name",serviceName).eq("active",true).maybeSingle();
+   if(serviceError) throw serviceError;
+   if(!service){toast("Selected service database me nahi mili");return}
+   const date=document.getElementById("fDate").value;
+   const baseAmount=0;
+   const bx=calculateBonus(date,baseAmount);
+   const row={
+     customer_id:customer.id,
+     partner_id:null,
+     service_id:service.id,
+     booking_date:date,
+     time_slot:document.getElementById("fTime").value,
+     address:address,
+     landmark:document.getElementById("fLandmark").value.trim(),
+     work_details:document.getElementById("fDetails").value.trim(),
+     status:"New",
+     amount:0,
+     payment_method:document.getElementById("fPayment").value,
+     payment_status:"Pending",
+     partner_base_amount:baseAmount,
+     bonus_amount:bx.amount,
+     bonus_type:bx.type||null
+   };
+   const saved=await gsSupabase.createBooking(row);
+   // Keep a lightweight local cache only for offline display; Supabase is source of truth.
+   const local={id:saved.id,service:service.name,name:customer.name||name,mobile:customer.mobile||mobile,village:customer.village||village,address:saved.address,landmark:saved.landmark,date:saved.booking_date,time:saved.time_slot,details:saved.work_details,status:saved.status,partnerId:saved.partner_id,amount:saved.amount,paymentMethod:saved.payment_method,payment:saved.payment_status,partnerBaseAmount:saved.partner_base_amount||0,bonus:saved.bonus_amount||0,bonusType:saved.bonus_type||"",createdAt:saved.created_at};
+   state.bookings=state.bookings.filter(x=>x.id!==saved.id); state.bookings.unshift(local); save();
+   show("bookings"); toast("✅ Live booking created: GS-"+saved.id); openDetails(saved.id);
+ }catch(e){
+   console.error("Live booking failed",e);
+   toast("❌ Booking save nahi hui: "+(e.message||"Supabase error"));
+ }
+}
+
+function statusClass(s){return s==="Done"?"done":s==="Working"||s==="Assigned"?"working":s==="Cancelled"?"cancel":"new"}
+function bookingCard(b,admin=false){
+ const p=PARTNERS.find(x=>x.id===b.partnerId);
+ return `<div class="booking"><div class="booking-top"><div><b>${esc(b.service)}</b><div class="meta">${esc(b.name)} • ${esc(b.mobile)}<br>${esc(b.village)}${b.address?" • "+esc(b.address):""}</div></div><span class="pill ${statusClass(b.status)}">${esc(b.status)}</span></div>
+ <div class="meta">🆔 ${b.id} • 📅 ${esc(b.date)} • ⏰ ${esc(b.time)}${p?"<br>👷 "+esc(p.name)+" • ⭐ "+p.rating:""}${b.lat?"<br>📍 "+b.lat.toFixed(6)+", "+b.lng.toFixed(6):""}</div>
+ <div class="booking-actions"><button class="mini" onclick="openDetails('${b.id}')">View</button>${b.mobile?`<button class="mini" onclick="location.href='tel:${b.mobile}'">📞 Call</button>`:""}<button class="mini" onclick="wa('${b.id}')">💬 WhatsApp</button>${admin?`<button class="mini" onclick="assign('${b.id}')">👷 Assign</button>`:""}</div></div>`
+}
+async function loadCustomerNotifications(){
+ const box=document.getElementById("customerNotifications"); if(!box)return;
+ try{
+   const customer=await gsAuth.currentCustomer();
+   if(!customer){box.innerHTML="<div class='empty'>Customer login required.</div>";return;}
+   const rows=await gsSupabase.myNotifications(customer.id);
+   box.innerHTML=rows.length?rows.map(n=>`<div class="booking" style="margin-top:8px"><b>🔔 ${esc(n.title||"Notification")}</b><div class="meta">${esc(n.message||"")}<br>🕒 ${n.created_at?new Date(n.created_at).toLocaleString("en-IN"):""}</div></div>`).join(""):"<div class='empty'>Abhi koi notification nahi hai.</div>";
+ }catch(e){box.innerHTML=`<div class='empty error'>Notifications load nahi hui: ${esc(e.message||"Supabase error")}</div>`}
+}
+async function renderMyBookings(){
+ try{
+   const customer=await gsAuth.currentCustomer();
+   if(customer){
+     const {data:rows,error}=await gSupabase.from("bookings").select("*,services(name),partners(name,mobile)").eq("customer_id",customer.id).order("created_at",{ascending:false});
+     if(error)throw error;
+     state.bookings=(rows||[]).map(b=>({id:b.id,service:b.services?.name||"Service",name:customer.name||"",mobile:customer.mobile||"",village:customer.village||"",address:b.address,landmark:b.landmark,date:b.booking_date,time:b.time_slot,details:b.work_details,status:b.status,partnerId:b.partner_id,amount:b.amount,paymentMethod:b.payment_method,payment:b.payment_status,partnerBaseAmount:b.partner_base_amount||0,bonus:b.bonus_amount||0,bonusType:b.bonus_type||"",createdAt:b.created_at,partnerName:b.partners?.name||""}));
+     save();
+     await loadCustomerNotifications();
+   }
+ }catch(e){console.error("Customer live bookings failed",e)}
+ const q=(document.getElementById("mySearch")?.value||"").toLowerCase();let arr=state.bookings.filter(b=>(String(b.id)+b.mobile+b.service).toLowerCase().includes(q));
+ document.getElementById("myBookings").innerHTML=arr.length?arr.map(b=>bookingCard(b)).join(""):"<div class='empty'>📋 Booking nahi mili.</div>";
+}
+async function adminLogin(){
+ const email=document.getElementById("adminEmail").value.trim();
+ const password=document.getElementById("adminPassword").value;
+ if(!email||!password){toast("Admin email aur password bharein");return}
+ try{
+   await gsAuth.signIn(email,password);
+   const session=await gsAuth.session();
+   const {data:profile,error}=await gSupabase.from("profiles").select("id,full_name,role").eq("id",session.user.id).maybeSingle();
+   if(error) throw error;
+   if(!profile||profile.role!=="admin"){
+     await gsAuth.signOut();
+     throw new Error("Ye account Admin role wala nahi hai");
+   }
+   state.admin=true; save();
+   document.getElementById("adminLogin").classList.add("hidden");
+   document.getElementById("adminDash").classList.remove("hidden");
+   await renderAdmin();
+   toast("✅ Admin live login successful");
+ }catch(e){console.error(e);toast("❌ Admin login failed: "+(e.message||"check credentials"));}
+}
+async function renderAdmin(){
+ try{
+   const session=await gsAuth.session();
+   if(!session){state.admin=false;document.getElementById("adminLogin").classList.remove("hidden");document.getElementById("adminDash").classList.add("hidden");return}
+   const {data:profile,error:pe}=await gSupabase.from("profiles").select("role").eq("id",session.user.id).maybeSingle();
+   if(pe) throw pe;
+   if(!profile||profile.role!=="admin"){state.admin=false;document.getElementById("adminLogin").classList.remove("hidden");document.getElementById("adminDash").classList.add("hidden");return}
+   document.getElementById("adminLogin").classList.add("hidden");document.getElementById("adminDash").classList.remove("hidden");
+   const {data:rows,error}=await gSupabase.from("bookings").select("*,customers(name,mobile,village),services(name),partners(name,mobile,village)").order("created_at",{ascending:false});
+   if(error) throw error;
+   const live=(rows||[]).map(b=>({
+     id:b.id,service:b.services?.name||"Service",name:b.customers?.name||"",mobile:b.customers?.mobile||"",village:b.customers?.village||"",address:b.address,landmark:b.landmark,date:b.booking_date,time:b.time_slot,details:b.work_details,status:b.status,partnerId:b.partner_id,amount:b.amount,paymentMethod:b.payment_method,payment:b.payment_status,partnerBaseAmount:b.partner_base_amount||0,bonus:b.bonus_amount||0,bonusType:b.bonus_type||"",createdAt:b.created_at,partnerName:b.partners?.name||""
+   }));
+   state.bookings=live; save();
+   let q=(document.getElementById("adminSearch")?.value||"").toLowerCase();let arr=live.filter(b=>(String(b.id)+b.name+b.mobile+b.service+b.village).toLowerCase().includes(q));
+   document.getElementById("sTotal").textContent=live.length;document.getElementById("sNew").textContent=live.filter(b=>b.status==="New").length;document.getElementById("sWork").textContent=live.filter(b=>["Assigned","Working"].includes(b.status)).length;document.getElementById("sDone").textContent=live.filter(b=>b.status==="Done").length;
+   document.getElementById("adminBookings").innerHTML=arr.length?arr.map(b=>bookingCard(b,true)).join(""):"<div class='empty'>No live bookings.</div>";
+ }catch(e){console.error("Admin live load failed",e);document.getElementById("adminBookings").innerHTML="<div class='empty error'>Live bookings load nahi hui: "+esc(e.message||"Supabase error")+"</div>";}
+}
+async function partnerLogin(){
+ const email=document.getElementById("partnerEmail").value.trim();
+ const password=document.getElementById("partnerPassword").value;
+ if(!email||!password){toast("Partner email aur password bharein");return}
+ try{
+   await gsAuth.signIn(email,password);
+   const session=await gsAuth.session();
+   const {data:profile,error:pe}=await gSupabase.from("profiles").select("id,full_name,role").eq("id",session.user.id).maybeSingle();
+   if(pe) throw pe;
+   if(!profile||profile.role!=="partner"){await gsAuth.signOut();throw new Error("Ye account Partner role wala nahi hai")}
+   const partner=await gsAuth.currentPartner();
+   if(!partner||!partner.active){await gsAuth.signOut();throw new Error("Partner profile active nahi hai")}
+   state.partnerAuthId=partner.id; save();
+   document.getElementById("partnerLogin").classList.add("hidden");
+   document.getElementById("partnerDash").classList.remove("hidden");
+   document.getElementById("partnerIdentity").textContent=`${partner.name} • ${partner.service} • ${partner.village||""}`;
+   await renderPartner();
+   toast("✅ Partner live login successful");
+ }catch(e){console.error(e);toast("❌ Partner login failed: "+(e.message||"check credentials"));}
+}
+async function partnerLogout(){try{await gsAuth.signOut()}catch(e){} state.partnerAuthId=null;save();document.getElementById("partnerLogin").classList.remove("hidden");document.getElementById("partnerDash").classList.add("hidden");document.getElementById("partnerJobs").innerHTML="";toast("Partner logout")}
+async function renderPartner(){
+ const box=document.getElementById("partnerJobs");
+ try{
+   const session=await gsAuth.session();
+   if(!session){document.getElementById("partnerLogin").classList.remove("hidden");document.getElementById("partnerDash").classList.add("hidden");return}
+   const partner=await gsAuth.currentPartner();
+   if(!partner){throw new Error("Partner profile nahi mila")}
+   document.getElementById("partnerLogin").classList.add("hidden");document.getElementById("partnerDash").classList.remove("hidden");
+   document.getElementById("partnerIdentity").textContent=`${partner.name} • ${partner.service} • ${partner.village||""}`;
+   const {data:rows,error}=await gSupabase.from("bookings").select("*,customers(name,mobile,village),services(name)").eq("partner_id",partner.id).order("booking_date",{ascending:true}).order("created_at",{ascending:false});
+   if(error) throw error;
+   const arr=(rows||[]).map(b=>({id:b.id,service:b.services?.name||"Service",name:b.customers?.name||"",mobile:b.customers?.mobile||"",village:b.customers?.village||"",address:b.address,landmark:b.landmark,date:b.booking_date,time:b.time_slot,details:b.work_details,status:b.status,partnerId:b.partner_id,amount:b.amount,paymentMethod:b.payment_method,payment:b.payment_status,partnerBaseAmount:b.partner_base_amount||0,bonus:b.bonus_amount||0,bonusType:b.bonus_type||"",createdAt:b.created_at}));
+   state.bookings=state.bookings.filter(b=>b.partnerId!==partner.id).concat(arr); save();
+   box.innerHTML=arr.length?arr.map(b=>`${bookingCard(b)}<div class="booking-actions" style="margin-top:-4px"><button class="mini" onclick="setStatus('${b.id}','Working')">▶️ Start</button><button class="mini" onclick="setStatus('${b.id}','Done')">✅ Done</button><button class="mini" onclick="setStatus('${b.id}','Cancelled')">Cancel</button></div>`).join(""):"<div class='empty'>Abhi koi assigned job nahi hai.</div>";
+ }catch(e){console.error("Partner live load failed",e);box.innerHTML=`<div class='empty error'>Jobs load nahi hui: ${esc(e.message||"Supabase error")}</div>`}
+}
+async function assign(id){
+ let b=state.bookings.find(x=>x.id===id);if(!b)return;
+ try{
+   const {data:list,error}=await gSupabase.from("partners").select("id,name,service,rating,active").eq("active",true).order("id");
+   if(error) throw error;
+   const opts=(list||[]).filter(p=>p.service===b.service||b.service==="Labour"); const partners=opts.length?opts:(list||[]);
+   if(!partners.length){toast("Koi active partner available nahi hai");return}
+   let html=`<div class="field"><label>Partner choose karein</label><select id="assignSelect">${partners.map(p=>`<option value="${p.id}">${esc(p.name)} — ${esc(p.service)} — ⭐${p.rating}</option>`).join("")}</select></div><button class="btn primary" onclick="saveAssign('${id}')">Assign Job</button>`;
+   document.getElementById("modalTitle").textContent="👷 Assign Partner";document.getElementById("modalBody").innerHTML=html;document.getElementById("modal").classList.add("show")
+ }catch(e){toast("Partner list load nahi hui: "+(e.message||"Supabase error"))}
+}
+async function saveAssign(id){
+ const pid=Number(document.getElementById("assignSelect").value);
+ try{
+   const {data,error}=await gSupabase.from("bookings").update({partner_id:pid,status:"Assigned"}).eq("id",id).select().single();
+   if(error) throw error;
+   closeModal(); await renderAdmin(); toast("👷 Partner assigned live");
+ }catch(e){toast("❌ Assignment failed: "+(e.message||"Supabase error"))}
+}
+async function setStatus(id,status){
+ try{
+   const {data,error}=await gSupabase.from("bookings").update({status}).eq("id",id).select().single();
+   if(error) throw error;
+   await renderPartner(); await loadCustomerNotifications(); toast("Status updated: "+status);
+ }catch(e){toast("❌ Status update failed: "+(e.message||"Supabase error"))}
+}
+function openDetails(id){
+ const b=state.bookings.find(x=>x.id===id);if(!b)return;const p=PARTNERS.find(x=>x.id===b.partnerId);
+ document.getElementById("modalTitle").textContent="Booking "+b.id;
+ document.getElementById("modalBody").innerHTML=`<div class="meta" style="font-size:14px;line-height:2"><b>${esc(b.service)}</b><br>👤 ${esc(b.name)} • ${esc(b.mobile)}<br>🏠 ${esc(b.village)}${b.address?" • "+esc(b.address):""}${b.landmark?" • "+esc(b.landmark):""}<br>📅 ${esc(b.date)} • ⏰ ${esc(b.time)}<br>📌 ${esc(b.details||"No extra details")}<br>📦 Status: <b>${esc(b.status)}</b><br>💰 Payment: ${esc(b.payment)}${b.paymentMethod?" • "+esc(b.paymentMethod):""}${b.upiId?" • "+esc(b.upiId):""}<br>🎁 Bonus: ₹${Number(b.bonus||0)} ${esc(b.bonusType||"")}${p?"<br>👷 Partner: "+esc(p.name)+" • "+p.mobile:""}${b.lat?`<br>📍 GPS: ${b.lat.toFixed(6)}, ${b.lng.toFixed(6)}`:""}</div>${b.paymentMethod==="UPI"&&state.upi.id?`<div class="booking-actions"><button class="btn primary" onclick="payUPI('${b.id}')">💳 Pay via UPI</button></div>`:""}<div class="booking-actions"><button class="btn ghost" onclick="wa('${b.id}')">💬 WhatsApp</button>${b.lat?`<button class="btn ghost" onclick="openMap('${b.lat}','${b.lng}')">🗺️ Map</button>`:""}</div>`;
+ document.getElementById("modal").classList.add("show")
+}
+function closeModal(){document.getElementById("modal").classList.remove("show")}
+function wa(id){let b=state.bookings.find(x=>x.id===id);if(!b)return;let p=PARTNERS.find(x=>x.id===b.partnerId);let msg=`🌾 GaonSeva Booking\nBooking ID: ${b.id}\nService: ${b.service}\nCustomer: ${b.name}\nMobile: ${b.mobile}\nVillage: ${b.village}\nAddress: ${b.address||"-"}\nLandmark: ${b.landmark||"-"}\nDate: ${b.date}\nTime: ${b.time}\nWork: ${b.details||"-"}\nStatus: ${b.status}${p?"\nPartner: "+p.name:""}`;location.href="https://wa.me/?text="+encodeURIComponent(msg)}
+function openMap(lat,lng){location.href=`https://www.google.com/maps?q=${lat},${lng}`}
+function exportCSV(){
+ let rows=[["Booking ID","Service","Name","Mobile","Village","Address","Landmark","Date","Time","Status","Partner","Payment Method","UPI ID","Partner Base","Bonus","Bonus Type","Lat","Lng","Details"]];
+ state.bookings.forEach(b=>{let p=PARTNERS.find(x=>x.id===b.partnerId);rows.push([b.id,b.service,b.name,b.mobile,b.village,b.address,b.landmark,b.date,b.time,b.status,p?.name||"",b.paymentMethod||"",b.upiId||"",b.partnerBaseAmount||0,b.bonus||0,b.bonusType||"",b.lat??"",b.lng??"",b.details])});
+ let csv=rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");let a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv"}));a.download="gaonseva_bookings.csv";a.click();URL.revokeObjectURL(a.href)
+}
+function resetDemo(){if(confirm("Saari local bookings delete karni hain?")){state.bookings=[];save();renderAdmin();toast("Demo data reset")}}
+setupNav();renderServices();setupForm();loadBusinessSettings();
+
+async function syncLiveServices(){
+  try{
+    const {data,error}=await gSupabase.from("services").select("id,name,description,active").eq("active",true).order("id");
+    if(error) throw error;
+    if(Array.isArray(data) && data.length){
+      SERVICES.length=0;
+      data.forEach(x=>SERVICES.push(["🛠️",x.name,x.description||"Local service"]));
+      renderServices();
+      setupForm();
+    }
+  }catch(e){
+    console.warn("Live services sync failed; using built-in services:",e);
+  }
+}
+</script>
+
+<script>
+const LANG={
+ hi:{brand:"गाँव की लोकल सर्विस",hero:"घर के पास का काम, एक जगह। 🌾",heroSub:"इलेक्ट्रिशियन, प्लंबर, कारपेंटर, पेंटर, रिपेयर और लोकल सर्विस बुक करें।",book:"सर्विस बुक करें",bookings:"मेरी बुकिंग",home:"होम",partner:"पार्टनर",admin:"एडमिन",voice:"बोलकर भरें",location:"वर्तमान लोकेशन",manual:"पता मैन्युअली भी दे सकते हैं।",confirm:"बुकिंग कन्फर्म करें",name:"नाम",mobile:"मोबाइल",village:"गाँव",address:"घर / गली",landmark:"लैंडमार्क",date:"तारीख",time:"समय",details:"काम की जानकारी",service:"सर्विस",gps:"लोकेशन",speechOn:"बोलना शुरू करें",speechOff:"बोलना बंद करें"},
+ en:{brand:"Village Local Services",hero:"Local work, all in one place. 🌾",heroSub:"Book electrician, plumber, carpenter, painter, repair and local services.",book:"Book Service",bookings:"My Bookings",home:"Home",partner:"Partner",admin:"Admin",voice:"Voice Fill",location:"Current Location",manual:"You can also enter the address manually.",confirm:"Confirm Booking",name:"Name",mobile:"Mobile",village:"Village",address:"House / Street",landmark:"Landmark",date:"Date",time:"Time",details:"Work Details",service:"Service",gps:"Location",speechOn:"Start speaking",speechOff:"Stop speaking"},
+ hinglish:{brand:"Village Local Services",hero:"Ghar ke paas ka kaam, ek jagah. 🌾",heroSub:"Electrician, plumber, carpenter, painter, repair aur local services book karein.",book:"Service Book Karein",bookings:"My Bookings",home:"Home",partner:"Partner",admin:"Admin",voice:"Bolkar Bharein",location:"Current Location",manual:"Address manually bhi de sakte hain.",confirm:"Booking Confirm Karein",name:"Name",mobile:"Mobile",village:"Village",address:"House / Gali",landmark:"Landmark",date:"Date",time:"Time",details:"Work Details",service:"Service",gps:"Location",speechOn:"Bolna Start Karein",speechOff:"Bolna Band Karein"},
+ hr:{brand:"गाम की लोकल सर्विस",hero:"गाम का काम, एकै जगह। 🌾",heroSub:"इलेक्ट्रीशियन, प्लम्बर, बढ़ई, पेंटर, रिपेयर अर लोकल काम बुक करो।",book:"काम बुक करो",bookings:"मेरी बुकिंग",home:"होम",partner:"पार्टनर",admin:"एडमिन",voice:"बोल कै भरो",location:"अपणी लोकेशन",manual:"पता हाथ तै भी भर सकै हो।",confirm:"बुकिंग पक्की करो",name:"नाम",mobile:"मोबाइल",village:"गाम",address:"घर / गली",landmark:"निशान / लैंडमार्क",date:"तारीख",time:"समय",details:"काम की जानकारी",service:"काम",gps:"लोकेशन",speechOn:"बोलणा शुरू करो",speechOff:"बोलणा बंद करो"}
+};
+let currentLang=localStorage.getItem("gaonseva_lang")||"hinglish";
+let recognition=null, listening=false, voiceTarget=null;
+
+const APP_I18N={
+  hi:{
+    "Customer Login":"कस्टमर लॉगिन","Live booking ke liye customer account se login karein.":"लाइव बुकिंग के लिए कस्टमर अकाउंट से लॉगिन करें।","Email":"ईमेल","Password":"पासवर्ड","Login":"लॉगिन","Service Booking":"सर्विस बुकिंग","Payment":"भुगतान","Payment Method":"भुगतान का तरीका","Cash":"कैश","UPI":"यूपीआई","UPI ID (optional)":"यूपीआई आईडी (वैकल्पिक)","UPI Scanner":"यूपीआई स्कैनर","Kaunsa kaam hai?":"कौन सा काम है?","Booking ID / mobile / service":"बुकिंग आईडी / मोबाइल / सर्विस","Notifications":"नोटिफिकेशन","Refresh":"रिफ्रेश","Login karke notifications dekhein.":"लॉगिन करके नोटिफिकेशन देखें।","Partner Login":"पार्टनर लॉगिन","Supabase Partner account se login karein.":"सुपाबेस पार्टनर अकाउंट से लॉगिन करें।","Partner Email":"पार्टनर ईमेल","Partner Mode":"पार्टनर मोड","Live assigned jobs":"लाइव असाइन किए गए काम","Logout":"लॉगआउट","Refresh Jobs":"काम रिफ्रेश करें","Admin Email":"एडमिन ईमेल","Admin Password":"एडमिन पासवर्ड","Live Admin access ke liye Supabase Admin account se login karein.":"लाइव एडमिन एक्सेस के लिए सुपाबेस एडमिन अकाउंट से लॉगिन करें।","Admin":"एडमिन","Total":"कुल","New":"नया","Working":"काम चल रहा है","Done":"पूरा","UPI Settings":"यूपीआई सेटिंग्स","Partner Bonus":"पार्टनर बोनस","Operations":"ऑपरेशन्स","Save UPI Settings":"यूपीआई सेटिंग्स सेव करें","Save Bonus Settings":"बोनस सेटिंग्स सेव करें","CSV Export":"CSV एक्सपोर्ट","Search booking...":"बुकिंग खोजें...","Reset Demo Data":"डेमो डेटा रीसेट करें","Current Location Use Karein":"वर्तमान लोकेशन इस्तेमाल करें","Current Location Add Karein":"वर्तमान लोकेशन जोड़ें","Location optional hai. Address manually bhi de sakte hain.":"लोकेशन वैकल्पिक है। पता मैन्युअली भी दे सकते हैं।","GPS location optional — address bhi valid hai.":"GPS लोकेशन वैकल्पिक है — पता भी मान्य है।","Booking Confirm Karein":"बुकिंग कन्फर्म करें","Forgot Password / Reset":"पासवर्ड भूल गए / रीसेट करें"
+  },
+  en:{
+    "Customer Login":"Customer Login","Live booking ke liye customer account se login karein.":"Login with your customer account for live booking.","Email":"Email","Password":"Password","Login":"Login","Service Booking":"Service Booking","Payment":"Payment","Payment Method":"Payment Method","Cash":"Cash","UPI":"UPI","UPI ID (optional)":"UPI ID (optional)","UPI Scanner":"UPI Scanner","Kaunsa kaam hai?":"What work do you need?","Booking ID / mobile / service":"Booking ID / mobile / service","Notifications":"Notifications","Refresh":"Refresh","Login karke notifications dekhein.":"Login to view notifications.","Partner Login":"Partner Login","Supabase Partner account se login karein.":"Login with your Supabase partner account.","Partner Email":"Partner Email","Partner Mode":"Partner Mode","Live assigned jobs":"Live assigned jobs","Logout":"Logout","Refresh Jobs":"Refresh Jobs","Admin Email":"Admin Email","Admin Password":"Admin Password","Live Admin access ke liye Supabase Admin account se login karein.":"Login with your Supabase Admin account for live access.","Admin":"Admin","Total":"Total","New":"New","Working":"Working","Done":"Done","UPI Settings":"UPI Settings","Partner Bonus":"Partner Bonus","Operations":"Operations","Save UPI Settings":"Save UPI Settings","Save Bonus Settings":"Save Bonus Settings","CSV Export":"CSV Export","Search booking...":"Search booking...","Reset Demo Data":"Reset Demo Data","Current Location Use Karein":"Use Current Location","Current Location Add Karein":"Add Current Location","Location optional hai. Address manually bhi de sakte hain.":"Location is optional. You can enter the address manually.","GPS location optional — address bhi valid hai.":"GPS location is optional — address is also valid.","Booking Confirm Karein":"Confirm Booking","Forgot Password / Reset":"Forgot Password / Reset"
+  },
+  hinglish:{
+    "Customer Login":"Customer Login","Live booking ke liye customer account se login karein.":"Live booking ke liye customer account se login karein.","Service Booking":"Service Booking","Payment":"Payment","Payment Method":"Payment Method","Cash":"Cash","UPI":"UPI","UPI ID (optional)":"UPI ID (optional)","UPI Scanner":"UPI Scanner","Kaunsa kaam hai?":"Kaunsa kaam hai?","Notifications":"Notifications","Refresh":"Refresh","Login karke notifications dekhein.":"Login karke notifications dekhein.","Partner Login":"Partner Login","Supabase Partner account se login karein.":"Supabase Partner account se login karein.","Partner Email":"Partner Email","Partner Mode":"Partner Mode","Live assigned jobs":"Live assigned jobs","Logout":"Logout","Refresh Jobs":"Refresh Jobs","Admin Email":"Admin Email","Admin Password":"Admin Password","Live Admin access ke liye Supabase Admin account se login karein.":"Live Admin access ke liye Supabase Admin account se login karein.","Admin":"Admin","Total":"Total","New":"New","Working":"Working","Done":"Done","UPI Settings":"UPI Settings","Partner Bonus":"Partner Bonus","Operations":"Operations","Save UPI Settings":"Save UPI Settings","Save Bonus Settings":"Save Bonus Settings","CSV Export":"CSV Export","Search booking...":"Search booking...","Reset Demo Data":"Reset Demo Data","Current Location Use Karein":"Current Location Use Karein","Current Location Add Karein":"Current Location Add Karein","Booking Confirm Karein":"Booking Confirm Karein","Forgot Password / Reset":"Forgot Password / Reset"
+  },
+  hr:{
+    "Customer Login":"कस्टमर लॉगिन","Live booking ke liye customer account se login karein.":"लाइव बुकिंग खात्तर कस्टमर अकाउंट तै लॉगिन करो।","Service Booking":"काम की बुकिंग","Payment":"पैसे","Payment Method":"पैसे देण का तरीका","Cash":"नकद","UPI":"यूपीआई","UPI ID (optional)":"यूपीआई आईडी (जरूरी कोनी)","UPI Scanner":"यूपीआई स्कैनर","Kaunsa kaam hai?":"के काम सै?","Notifications":"सूचना","Refresh":"फेर तै लोड करो","Login karke notifications dekhein.":"लॉगिन करकै सूचना देखो।","Partner Login":"पार्टनर लॉगिन","Supabase Partner account se login karein.":"सुपाबेस पार्टनर अकाउंट तै लॉगिन करो।","Partner Email":"पार्टनर ईमेल","Partner Mode":"पार्टनर मोड","Live assigned jobs":"लाइव लागे होए काम","Logout":"लॉगआउट","Refresh Jobs":"काम फेर लाओ","Admin Email":"एडमिन ईमेल","Admin Password":"एडमिन पासवर्ड","Live Admin access ke liye Supabase Admin account se login karein.":"लाइव एडमिन खात्तर सुपाबेस एडमिन अकाउंट तै लॉगिन करो।","Admin":"एडमिन","Total":"कुल","New":"नवा","Working":"काम चालू सै","Done":"पूरा","UPI Settings":"यूपीआई सेटिंग","Partner Bonus":"पार्टनर बोनस","Operations":"काम-काज","Save UPI Settings":"यूपीआई सेटिंग सेव करो","Save Bonus Settings":"बोनस सेटिंग सेव करो","CSV Export":"CSV एक्सपोर्ट","Search booking...":"बुकिंग खोजो...","Reset Demo Data":"डेमो डेटा रीसेट करो","Current Location Use Karein":"अपणी लोकेशन लेओ","Current Location Add Karein":"अपणी लोकेशन जोड़ो","Booking Confirm Karein":"बुकिंग पक्की करो","Forgot Password / Reset":"पासवर्ड भूल गए / फेर सेट करो"
+  }
+};
+function translateNodeText(lang){
+  const dict=APP_I18N[lang]||{};
+  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n=>{const raw=n.nodeValue.trim(); if(raw && dict[raw]) n.nodeValue=n.nodeValue.replace(raw,dict[raw]);});
+  document.querySelectorAll('input,textarea').forEach(el=>{
+    const p=el.getAttribute('placeholder'); if(p && dict[p]) el.setAttribute('placeholder',dict[p]);
+  });
+  document.querySelectorAll('select option').forEach(el=>{const raw=el.textContent.trim(); if(dict[raw]) el.textContent=dict[raw];});
+}
+function setLang(lang){
+ currentLang=lang; localStorage.setItem("gaonseva_lang",lang);
+ const L=LANG[lang];
+ const hero=document.querySelector(".hero h1"); if(hero) hero.textContent=L.hero;
+ const sub=document.querySelector(".hero p"); if(sub) sub.textContent=L.heroSub;
+ document.querySelectorAll("[data-i]").forEach(el=>{const k=el.getAttribute("data-i");if(L[k])el.textContent=L[k]});
+ const map=[["#fService","service"],["#fName","name"],["#fMobile","mobile"],["#fVillage","village"],["#fAddress","address"],["#fLandmark","landmark"],["#fDate","date"],["#fTime","time"],["#fDetails","details"]];
+ map.forEach(([sel,key])=>{let el=document.querySelector(sel);if(el){let lab=el.closest(".field")?.querySelector("label");if(lab)lab.textContent=L[key]+(["name","mobile","village","date","time"].includes(key)?" *":"");}});
+ const navMap={customer:L.home,book:L.book,bookings:L.bookings,partner:L.partner,admin:L.admin};
+ Object.entries(navMap).forEach(([id,t])=>{let b=document.getElementById("nav-"+id);if(b)b.textContent=t});
+ document.title="GaonSeva — "+L.brand;
+ translateNodeText(lang);
+}
+function voiceFor(id){const el=document.getElementById(id);if(!el)return;voiceTarget=el;toggleVoice(true)}
+function toggleVoice(forceTarget=false){
+ if(listening){stopVoice();return}
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SR){toast(currentLang==="en"?"Voice input is not supported in this browser. Use Chrome on Android.":"Voice input is not supported. Android Chrome me microphone permission ke saath try karein.");return}
+ if(!window.isSecureContext && location.protocol!=='file:'){toast("Voice ke liye HTTPS website aur microphone permission zaroori hai.");return}
+ if(!forceTarget){voiceTarget=document.activeElement;if(!voiceTarget||!["INPUT","TEXTAREA"].includes(voiceTarget.tagName))voiceTarget=document.getElementById("fDetails")}
+ recognition=new SR();
+ recognition.lang=currentLang==="en"?"en-IN":"hi-IN";
+ recognition.interimResults=true; recognition.continuous=false; recognition.maxAlternatives=1;
+ recognition.onstart=()=>{listening=true;toast((LANG[currentLang]?.speechOn||"Voice start")+" 🎙️");};
+ recognition.onresult=e=>{let text="";for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)text+=e.results[i][0].transcript}if(text&&voiceTarget){voiceTarget.value=(voiceTarget.value?voiceTarget.value+" ":"")+text.trim();voiceTarget.dispatchEvent(new Event("input",{bubbles:true}))}};
+ recognition.onerror=e=>{const msg=e.error==="not-allowed"?"Microphone permission allow karein.":e.error==="no-speech"?"Kuch bola nahi suna. Dobara try karein.":e.error==="network"?"Voice service network issue. Internet check karein.":"Voice input error: "+e.error;stopVoice();toast(msg)};
+ recognition.onend=()=>stopVoice();
+ try{recognition.start()}catch(e){stopVoice();toast("Voice start nahi ho paaya. Dobara button dabayein.")}
+}
+function stopVoice(){listening=false;try{recognition&&recognition.stop()}catch(e){}recognition=null}
+async function adminForgotPassword(){
+ const email=(document.getElementById("adminEmail")?.value||"").trim();
+ if(!email){toast("Pehle Admin email enter karein. Supabase > Authentication > Users me email mil jayega.");return}
+ try{const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:(location.origin + '/')});if(error)throw error;toast("Password reset email bhej diya gaya. Inbox/Spam check karein.")}catch(e){toast("Reset email nahi gaya: "+(e.message||"Unknown error"))}
+}
+window.addEventListener("load",()=>{const s=document.getElementById("langSelect");if(s)s.value=currentLang;setLang(currentLang)});
+</script>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const el = document.getElementById("gs-live-status");
+  const ok = await window.initGaonSevaSupabase();
+  if (ok) {
+    el.textContent = "Supabase: LIVE";
+    el.style.color = "#087f5b";
+  } else {
+    el.textContent = "Supabase: offline";
+    el.style.color = "#d92d20";
+  }
+  if(ok) {
+    try {
+      await syncLiveServices();
+      await refreshCustomerAuth();
+    } catch(e) { console.warn("GaonSeva live initialization:", e); }
+  }
+});
+</script>
+<script>
+// GaonSeva Mobile OTP layer
+(function(){
+  function e164(v){let n=(v||'').replace(/\D/g,'');return n.startsWith('91')?'+'+n:'+91'+n}
+  async function sendOtp(){let p=document.getElementById('gsOtpPhone').value.trim();if(!/^\d{10}$/.test(p)){toast('10 digit mobile number bharein');return}try{let r=await gSupabase.auth.signInWithOtp({phone:e164(p)});if(r.error)throw r.error;document.getElementById('gsOtpMsg').textContent='OTP sent. SMS me aaya OTP enter karein.';toast('📨 OTP sent')}catch(x){toast('❌ OTP send nahi hua: '+(x.message||'SMS provider configure karein'))}}
+  async function verifyOtp(){let p=document.getElementById('gsOtpPhone').value.trim(),t=document.getElementById('gsOtpCode').value.trim();if(!/^\d{10}$/.test(p)||!/^[0-9]{6}$/.test(t)){toast('Mobile aur 6-digit OTP check karein');return}try{let r=await gSupabase.auth.verifyOtp({phone:e164(p),token:t,type:'sms'});if(r.error)throw r.error;await refreshCustomerAuth();document.getElementById('gsOtpMsg').textContent='✅ Mobile verified and logged in.';toast('✅ OTP login successful')}catch(x){toast('❌ OTP verification failed: '+(x.message||'Invalid OTP'))}}
+  function add(){if(document.getElementById('gsOtpCard'))return;let c=document.createElement('div');c.id='gsOtpCard';c.className='card';c.style.marginBottom='14px';c.innerHTML='<h3>📱 Mobile OTP Login</h3><p class="muted">Production login: mobile number + OTP.</p><div class="row"><div class="field"><label>Mobile Number</label><input id="gsOtpPhone" inputmode="numeric" maxlength="10" placeholder="10 digit mobile"></div><div class="field"><label>OTP</label><input id="gsOtpCode" inputmode="numeric" maxlength="6" placeholder="6 digit OTP"></div></div><div class="booking-actions"><button class="btn ghost" id="gsSendOtp">📨 Send OTP</button><button class="btn primary" id="gsVerifyOtp">✅ Verify OTP</button></div><div id="gsOtpMsg" class="locline">Supabase SMS provider required.</div>';let target=document.getElementById('customer');let hero=target&&target.querySelector('.hero');if(target&&hero)target.insertBefore(c,hero);document.getElementById('gsSendOtp').onclick=sendOtp;document.getElementById('gsVerifyOtp').onclick=verifyOtp}
+  document.addEventListener('DOMContentLoaded',add);
+})();
+</script>
+</body>
+
+<!--
+GAONSEVA LIVE CONNECTION NOTES
+- Supabase project: https://usiuyibnvgpkvedslhug.supabase.co
+- Uses publishable key only. Never put a secret/service-role key in this file.
+- Existing localStorage/business UI remains intact.
+- gsSupabase.services(), partners(), createBooking(), booking(), myNotifications()
+  are available for wiring existing UI actions to the live database.
+-->
+</html>
