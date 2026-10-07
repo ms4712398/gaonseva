@@ -14,9 +14,22 @@ window.initGaonSevaSupabase = async function () {
       console.warn("Supabase SDK not loaded");
       return false;
     }
+    // This is a client-only PWA/static site. Use Supabase implicit auth for
+    // email recovery so a valid reset link can be opened in Gmail/Chrome or
+    // another browser without requiring a PKCE verifier from the browser that
+    // originally requested the email. PKCE code exchange is intentionally not
+    // required for this client-only deployment.
     window.gSupabase = window.supabase.createClient(
       window.GAONSEVA_SUPABASE_URL,
-      window.GAONSEVA_SUPABASE_KEY
+      window.GAONSEVA_SUPABASE_KEY,
+      {
+        auth: {
+          flowType: "implicit",
+          detectSessionInUrl: true,
+          persistSession: true,
+          autoRefreshToken: true
+        }
+      }
     );
     const { error } = await window.gSupabase.from("services").select("id,name,active").limit(1);
     if (error) throw error;
@@ -704,18 +717,19 @@ async function handlePasswordRecovery(){
     if(recoveryUrl) sessionStorage.setItem("gaonseva_recovery_pending","1");
     const pending = sessionStorage.getItem("gaonseva_recovery_pending")==="1";
 
-    // PKCE flow: Supabase sends ?code=... . Exchange it for a session first.
+    // A ?code= link is a PKCE recovery link. PKCE codes require the same
+    // browser/device verifier that started the flow. New GaonSeva reset emails
+    // are generated with implicit flow above, so cross-browser email opening
+    // uses the token hash instead. If an older PKCE email is opened here, give
+    // a precise message rather than silently returning to normal login.
     if(code){
-      const {error}=await gSupabase.auth.exchangeCodeForSession(code);
-      if(error){
-        console.error("Recovery code exchange failed:",error);
-        showPasswordReset("❌ Reset link invalid/expired. Please request a new reset link.");
-        return false;
+      const {data:existing,error:sessionError}=await gSupabase.auth.getSession();
+      if(!sessionError && existing?.session){
+        showPasswordReset("🔐 Naya password set karein.");
+        return true;
       }
-      showPasswordReset("🔐 Naya password set karein.");
-      // Do NOT clean the URL yet. Keep the recovery context until the user
-      // successfully changes the password.
-      return true;
+      showPasswordReset("⚠️ Ye purana PKCE reset link hai. Forgot Password se naya reset link request karein, phir Gmail se open karein.");
+      return false;
     }
 
     // Implicit/legacy flow: Supabase puts access_token + type=recovery in hash.
