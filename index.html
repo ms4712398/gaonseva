@@ -4,6 +4,16 @@
 <!-- GaonSeva Supabase live connection -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// Capture a recovery URL BEFORE Supabase can consume/clean the URL fragment.
+// This makes the password-reset screen reliable on Gmail/Chrome/custom tabs.
+(function(){
+  try{
+    const q=new URLSearchParams(location.search||"");
+    const h=new URLSearchParams((location.hash||"").replace(/^#/,''));
+    const recovery = q.get('type')==='recovery' || !!q.get('code') || h.get('type')==='recovery' || !!h.get('access_token');
+    if(recovery) sessionStorage.setItem('gaonseva_recovery_pending','1');
+  }catch(e){ console.warn('Recovery URL capture failed',e); }
+})();
 window.GAONSEVA_SUPABASE_URL = "https://usiuyibnvgpkvedslhug.supabase.co";
 window.GAONSEVA_SUPABASE_KEY = "sb_publishable_l9oTX1ZdZwEoYY0rw6pjuw_VI-DRJAK";
 window.gSupabase = null;
@@ -337,7 +347,7 @@ async function customerForgotPassword(){
   if(!email){toast("Pehle Customer email enter karein.");return}
   if(!gSupabase){toast("Supabase abhi connect nahi hua. 2 sec baad try karein.");return}
   try{
-    const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin + location.pathname});
+    const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:'https://gaonseva-b2td.onrender.com/'});
     if(error) throw error;
     toast("📧 Reset link bhej diya gaya. Inbox/Spam check karein.");
   }catch(e){
@@ -356,7 +366,7 @@ async function partnerForgotPassword(){
   const email=(document.getElementById("partnerEmail")?.value||"").trim();
   if(!email){toast("Pehle Partner email enter karein.");return}
   try{
-    const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin + location.pathname});
+    const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:'https://gaonseva-b2td.onrender.com/'});
     if(error) throw error;
     toast("📧 Partner reset link bhej diya gaya.");
   }catch(e){toast("❌ Reset email nahi gaya: "+(e.message||"Supabase error"))}
@@ -679,7 +689,7 @@ async function adminForgotPassword(){
  const email=(document.getElementById("adminEmail")?.value||"").trim();
  if(!email){toast("Pehle Admin email enter karein. Supabase > Authentication > Users me email mil jayega.");return}
  try{
-   const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin + location.pathname});
+   const {error}=await gSupabase.auth.resetPasswordForEmail(email,{redirectTo:'https://gaonseva-b2td.onrender.com/'});
    if(error) throw error;
    toast("📧 Admin reset link bhej diya gaya. Inbox/Spam check karein.");
  }catch(e){toast("❌ Reset email nahi gaya: "+(e.message||"Unknown error"))}
@@ -711,9 +721,8 @@ async function handlePasswordRecovery(){
     const hasRecoveryHash = hashType==="recovery" || !!hash.get("access_token");
     const recoveryUrl = !!code || queryType==="recovery" || hasRecoveryHash;
 
-    // Persist the fact that this browser entered the password-recovery flow.
-    // Gmail/Chrome/custom tabs can reload the page while Supabase is consuming
-    // the URL fragment; sessionStorage prevents that reload from losing the UI.
+    // The URL may already have been consumed by Supabase before this function
+    // runs. The early capture script above preserves the recovery state.
     if(recoveryUrl) sessionStorage.setItem("gaonseva_recovery_pending","1");
     const pending = sessionStorage.getItem("gaonseva_recovery_pending")==="1";
 
@@ -748,7 +757,9 @@ async function handlePasswordRecovery(){
         return true;
       }
       if(recoveryUrl || pending){
-        showPasswordReset("⏳ Reset session load nahi hui. Agar password box na aaye, isi email se naya reset link request karein.");
+        // Keep the reset UI visible even if Gmail/Chrome opened the URL in a
+        // fresh tab and the Auth event was delivered before our listener.
+        showPasswordReset("⏳ Reset session load ho rahi hai. Agar password box active hai to naya password set karein.");
         return false;
       }
     }
