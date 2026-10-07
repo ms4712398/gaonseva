@@ -339,8 +339,29 @@ async function customerLogin(){
   try{
     await gsAuth.signIn(email,password);
     await refreshCustomerAuth();
+
+    // Successful customer login should continue into the booking flow instead of
+    // leaving the user on the login card. Prefill known customer details when available.
+    try{
+      const customer=await gsAuth.currentCustomer();
+      if(customer){
+        const nameEl=document.getElementById("fName");
+        const mobileEl=document.getElementById("fMobile");
+        const villageEl=document.getElementById("fVillage");
+        if(nameEl && customer.name) nameEl.value=customer.name;
+        if(mobileEl && customer.mobile) mobileEl.value=customer.mobile;
+        if(villageEl && customer.village) villageEl.value=customer.village;
+      }
+    }catch(prefillError){
+      console.warn("Customer booking prefill skipped:",prefillError);
+    }
+
     toast("✅ Customer login successful");
-  }catch(e){ console.error(e); toast("❌ Login failed: "+(e.message||"check email/password")); }
+    setTimeout(()=>show("book"),250);
+  }catch(e){
+    console.error(e);
+    toast("❌ Login failed: "+(e.message||"check email/password"));
+  }
 }
 async function customerForgotPassword(){
   const email=(document.getElementById("authEmail")?.value||"").trim();
